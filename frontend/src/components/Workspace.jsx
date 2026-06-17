@@ -48,8 +48,27 @@ export default function Workspace() {
     }, 2500);
 
     const formData = new FormData();
-    formData.append('file', file);
     const startTime = Date.now();
+
+    // For large files (>5MB), trim to first 10,000 rows on the client
+    // to prevent server OOM crashes on Render free tier
+    const MAX_ROWS = 10000;
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+
+    if (file.size > MAX_SIZE) {
+      try {
+        const text = await file.text();
+        const lines = text.split('\n');
+        const trimmed = lines.slice(0, MAX_ROWS + 1).join('\n'); // +1 for header
+        const trimmedBlob = new Blob([trimmed], { type: 'text/csv' });
+        formData.append('file', trimmedBlob, file.name);
+        addToast(`Large file detected — analyzing first ${MAX_ROWS.toLocaleString()} rows for optimal performance`, 'info');
+      } catch {
+        formData.append('file', file);
+      }
+    } else {
+      formData.append('file', file);
+    }
 
     try {
       const res = await axios.post(`${ML_URL}/api/analyze-csv`, formData, {
