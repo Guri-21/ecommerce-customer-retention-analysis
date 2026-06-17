@@ -225,9 +225,9 @@ router.post('/', authMiddleware, async (req, res) => {
         let analysisContext = '';
         let targetAnalysisId = analysisId;
 
-        if (!targetAnalysisId && req.user && req.user.id) {
+        if (!targetAnalysisId && req.userId) {
             try {
-                const recentAnalysis = await Analysis.findOne({ userId: req.user.id }).sort({ createdAt: -1 });
+                const recentAnalysis = await Analysis.findOne({ userId: req.userId }).sort({ createdAt: -1 });
                 if (recentAnalysis) {
                     targetAnalysisId = recentAnalysis._id.toString();
                 }

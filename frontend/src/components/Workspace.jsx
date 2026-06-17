@@ -73,7 +73,7 @@ export default function Workspace() {
     try {
       const res = await axios.post(`${ML_URL}/api/analyze-csv`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000, // 2 minutes for large files
+        timeout: 300000, // 5 minutes for Render free tier cold starts
       });
       setAnalysis(res.data);
       addToast(`Analysis complete — ${res.data.rows_processed?.toLocaleString()} rows processed`, 'success');
