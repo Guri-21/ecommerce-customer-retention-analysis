@@ -281,6 +281,7 @@ ${analysisContext ? `\n--- ANALYSIS CONTEXT ---\n${analysisContext}\n--- END CON
         const response = await axios.post(OPENROUTER_API_URL, {
             model: MODEL,
             messages,
+            max_tokens: 2048,
         }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
