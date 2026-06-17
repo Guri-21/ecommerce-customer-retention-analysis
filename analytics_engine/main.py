@@ -28,18 +28,18 @@ def health_check():
     return {"status": "ok", "version": "4.0.0", "message": "AutoML Studio Analytics Engine is running"}
 
 
+@app.get("/api/warmup")
+def warmup():
+    """Pre-load heavy ML libraries so the first analysis is fast."""
+    import pandas as pd
+    import numpy as np
+    from sklearn.ensemble import IsolationForest, RandomForestClassifier
+    return {"status": "warm", "message": "ML libraries pre-loaded"}
+
+
 @app.post("/api/analyze-csv")
 async def analyze_csv(file: UploadFile = File(...)):
-    """
-    Full analysis pipeline:
-    1. Data Profiling (column stats, quality score)
-    2. Anomaly Detection (Isolation Forest with scoring)
-    3. Churn Prediction (RFM + Random Forest)
-    4. Time-Series Forecasting (trend + 30-day projection)
-    5. Correlation Analysis (matrix + top pairs)
-    6. Distribution Analysis (histograms)
-    7. Data Health Assessment (quality scores, issues, fix suggestions)
-    """
+    """Full analysis pipeline — optimized for speed on Render free tier."""
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
@@ -48,7 +48,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         import pandas as pd
         import numpy as np
 
-        # Lazy-load ML modules (keeps server boot fast)
+        # Lazy-load ML modules
         from models.anomaly import run_anomaly_detection
         from models.churn import run_churn_prediction
         from models.forecasting import run_time_series_forecast, run_product_retention_forecast
@@ -56,58 +56,54 @@ async def analyze_csv(file: UploadFile = File(...)):
         from models.data_health import run_data_health
 
         content = await file.read()
+        MAX_ROWS = 3000
+        MAX_COLS = 15
 
-        # For large files, only read first 10k rows to prevent OOM
-        if len(content) > 5 * 1024 * 1024:
-            try:
-                df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=10000)
-            except UnicodeDecodeError:
-                df = pd.read_csv(io.StringIO(content.decode('latin-1')), nrows=10000)
-        else:
-            df = read_csv_robust(content)
+        # Read only what we need
+        try:
+            df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=MAX_ROWS)
+        except UnicodeDecodeError:
+            df = pd.read_csv(io.StringIO(content.decode('latin-1')), nrows=MAX_ROWS)
 
+        original_rows = len(df)
         del content
         gc.collect()
 
-        # Downsample if still too large
-        original_rows = len(df)
-        if len(df) > 10000:
-            df = df.sample(n=10000, random_state=42).reset_index(drop=True)
+        # Limit columns — keep date/ID/category cols + top numeric cols
+        if len(df.columns) > MAX_COLS:
+            # Identify important non-numeric columns
+            keep_cols = []
+            for col in df.columns:
+                lower = col.lower()
+                if any(kw in lower for kw in ['date', 'time', 'customer', 'product', 'category', 'name', 'id', 'order']):
+                    keep_cols.append(col)
+            # Add numeric columns up to limit
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            for col in numeric_cols:
+                if col not in keep_cols and len(keep_cols) < MAX_COLS:
+                    keep_cols.append(col)
+            # Fill remaining with any columns
+            for col in df.columns:
+                if col not in keep_cols and len(keep_cols) < MAX_COLS:
+                    keep_cols.append(col)
+            df = df[keep_cols]
 
-        # Optimize dtypes to reduce memory
+        # Downcast dtypes
         for col in df.select_dtypes(include=['float64']).columns:
             df[col] = df[col].astype('float32')
         for col in df.select_dtypes(include=['int64']).columns:
-            if df[col].min() >= -32768 and df[col].max() <= 32767:
-                df[col] = df[col].astype('int16')
-            else:
-                df[col] = df[col].astype('int32')
+            df[col] = df[col].astype('int32')
         gc.collect()
 
-        # Run each model sequentially with cleanup between runs
-        profile = run_data_profile(df)
-        gc.collect()
-
-        anomaly = run_anomaly_detection(df)
-        gc.collect()
-
-        churn = run_churn_prediction(df)
-        gc.collect()
-
-        forecast = run_time_series_forecast(df)
-        gc.collect()
-
-        retention = run_product_retention_forecast(df)
-        gc.collect()
-
-        corr = run_correlation(df)
-        gc.collect()
-
-        dist = run_distribution(df)
-        gc.collect()
-
-        health = run_data_health(df)
-        gc.collect()
+        # Run all models
+        profile = run_data_profile(df); gc.collect()
+        anomaly = run_anomaly_detection(df); gc.collect()
+        churn = run_churn_prediction(df); gc.collect()
+        forecast = run_time_series_forecast(df); gc.collect()
+        retention = run_product_retention_forecast(df); gc.collect()
+        corr = run_correlation(df); gc.collect()
+        dist = run_distribution(df); gc.collect()
+        health = run_data_health(df); gc.collect()
 
         return {
             "status": "success",

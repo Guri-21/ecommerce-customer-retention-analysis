@@ -18,7 +18,7 @@ def get_anomaly_mask(df: pd.DataFrame, contamination: float = 0.01):
     features = df[numeric_cols].copy()
     features = features.fillna(features.median())
 
-    model = IsolationForest(contamination=contamination, random_state=42)
+    model = IsolationForest(contamination=contamination, n_estimators=50, max_samples=256, random_state=42)
     predictions = model.fit_predict(features)
     scores = model.decision_function(features)
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +35,11 @@ export default function Workspace() {
   const [activeTab, setActiveTab] = useState('overview');
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef(null);
+
+  // Pre-warm the ML service so scikit-learn is loaded before user uploads
+  useEffect(() => {
+    axios.get(`${ML_URL}/api/warmup`).catch(() => {});
+  }, []);
 
   const handleUpload = async (e) => {
     e?.preventDefault();
