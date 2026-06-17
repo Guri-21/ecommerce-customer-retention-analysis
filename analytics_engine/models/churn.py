@@ -63,7 +63,7 @@ def run_churn_prediction(df: pd.DataFrame) -> dict:
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=5)
+    model = RandomForestClassifier(n_estimators=30, random_state=42, max_depth=5)
     model.fit(X_scaled, y)
     
     rfm['churn_probability'] = model.predict_proba(X_scaled)[:, 1]

@@ -54,23 +54,65 @@ async def analyze_csv(file: UploadFile = File(...)):
         content = await file.read()
         df = read_csv_robust(content)
 
-        # Memory optimization: Downsample to 25k rows to prevent OOM on 512MB limit
-        if len(df) > 25000:
-            df = df.sample(n=25000, random_state=42).reset_index(drop=True)
+        # Memory optimization for Render free tier (512MB limit)
+        # 1. Downsample large datasets
+        original_rows = len(df)
+        if len(df) > 10000:
+            df = df.sample(n=10000, random_state=42).reset_index(drop=True)
+
+        # 2. Optimize dtypes to reduce memory
+        for col in df.select_dtypes(include=['float64']).columns:
+            df[col] = df[col].astype('float32')
+        for col in df.select_dtypes(include=['int64']).columns:
+            if df[col].min() >= -32768 and df[col].max() <= 32767:
+                df[col] = df[col].astype('int16')
+            else:
+                df[col] = df[col].astype('int32')
+
+        # Free the raw CSV content from memory
+        del content
+        import gc
+        gc.collect()
+
+        # 3. Run each model sequentially with cleanup between runs
+        profile = run_data_profile(df)
+        gc.collect()
+
+        anomaly = run_anomaly_detection(df)
+        gc.collect()
+
+        churn = run_churn_prediction(df)
+        gc.collect()
+
+        forecast = run_time_series_forecast(df)
+        gc.collect()
+
+        retention = run_product_retention_forecast(df)
+        gc.collect()
+
+        corr = run_correlation(df)
+        gc.collect()
+
+        dist = run_distribution(df)
+        gc.collect()
+
+        health = run_data_health(df)
+        gc.collect()
 
         return {
             "status": "success",
             "filename": file.filename,
-            "rows_processed": len(df),
+            "rows_processed": original_rows,
+            "rows_sampled": len(df),
             "columns_processed": len(df.columns),
-            "profile": run_data_profile(df),
-            "anomaly_analysis": run_anomaly_detection(df),
-            "churn_prediction": run_churn_prediction(df),
-            "time_series_forecast": run_time_series_forecast(df),
-            "product_retention_forecast": run_product_retention_forecast(df),
-            "correlation": run_correlation(df),
-            "distribution": run_distribution(df),
-            "data_health": run_data_health(df),
+            "profile": profile,
+            "anomaly_analysis": anomaly,
+            "churn_prediction": churn,
+            "time_series_forecast": forecast,
+            "product_retention_forecast": retention,
+            "correlation": corr,
+            "distribution": dist,
+            "data_health": health,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing CSV: {str(e)}")
