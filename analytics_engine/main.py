@@ -52,7 +52,22 @@ async def analyze_csv(file: UploadFile = File(...)):
 
     try:
         content = await file.read()
-        df = read_csv_robust(content)
+
+        # Reject files larger than 20MB to prevent OOM
+        if len(content) > 20 * 1024 * 1024:
+            # For large files, only read the first 15k rows instead of the whole file
+            import gc
+            try:
+                df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=15000)
+            except UnicodeDecodeError:
+                df = pd.read_csv(io.StringIO(content.decode('latin-1')), nrows=15000)
+            del content
+            gc.collect()
+        else:
+            df = read_csv_robust(content)
+            del content
+            import gc
+            gc.collect()
 
         # Memory optimization for Render free tier (512MB limit)
         # 1. Downsample large datasets
