@@ -221,11 +221,24 @@ router.post('/', authMiddleware, async (req, res) => {
             });
         }
 
-        // Load analysis context if provided
+        // Load analysis context if provided or find the most recent one for the user
         let analysisContext = '';
-        if (analysisId) {
+        let targetAnalysisId = analysisId;
+
+        if (!targetAnalysisId && req.user && req.user.id) {
             try {
-                const analysis = await Analysis.findById(analysisId);
+                const recentAnalysis = await Analysis.findOne({ userId: req.user.id }).sort({ createdAt: -1 });
+                if (recentAnalysis) {
+                    targetAnalysisId = recentAnalysis._id.toString();
+                }
+            } catch (err) {
+                console.warn('Failed to fetch recent analysis for chat context:', err.message);
+            }
+        }
+
+        if (targetAnalysisId) {
+            try {
+                const analysis = await Analysis.findById(targetAnalysisId);
                 if (analysis) {
                     let resultsData = analysis.results;
                     if (typeof analysis.results === 'string' && analysis.results.endsWith('.json')) {
