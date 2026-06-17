@@ -1,15 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import pandas as pd
-import numpy as np
 import io
-
-from models.anomaly import run_anomaly_detection, clean_anomalies
-from models.churn import run_churn_prediction
-from models.forecasting import run_time_series_forecast, run_product_retention_forecast
-from models.profiler import run_data_profile, run_correlation, run_distribution
-from models.data_health import run_data_health, auto_fix_dataset
 
 app = FastAPI(title="AutoML Studio Analytics Engine", version="4.0.0")
 
@@ -22,8 +14,9 @@ app.add_middleware(
 )
 
 
-def read_csv_robust(content: bytes) -> pd.DataFrame:
+def read_csv_robust(content: bytes):
     """Read CSV with robust encoding handling."""
+    import pandas as pd
     try:
         return pd.read_csv(io.StringIO(content.decode('utf-8')))
     except UnicodeDecodeError:
@@ -51,31 +44,37 @@ async def analyze_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
     try:
+        import gc
+        import pandas as pd
+        import numpy as np
+
+        # Lazy-load ML modules (keeps server boot fast)
+        from models.anomaly import run_anomaly_detection
+        from models.churn import run_churn_prediction
+        from models.forecasting import run_time_series_forecast, run_product_retention_forecast
+        from models.profiler import run_data_profile, run_correlation, run_distribution
+        from models.data_health import run_data_health
+
         content = await file.read()
 
-        # Reject files larger than 20MB to prevent OOM
-        if len(content) > 20 * 1024 * 1024:
-            # For large files, only read the first 15k rows instead of the whole file
-            import gc
+        # For large files, only read first 10k rows to prevent OOM
+        if len(content) > 5 * 1024 * 1024:
             try:
-                df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=15000)
+                df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=10000)
             except UnicodeDecodeError:
-                df = pd.read_csv(io.StringIO(content.decode('latin-1')), nrows=15000)
-            del content
-            gc.collect()
+                df = pd.read_csv(io.StringIO(content.decode('latin-1')), nrows=10000)
         else:
             df = read_csv_robust(content)
-            del content
-            import gc
-            gc.collect()
 
-        # Memory optimization for Render free tier (512MB limit)
-        # 1. Downsample large datasets
+        del content
+        gc.collect()
+
+        # Downsample if still too large
         original_rows = len(df)
         if len(df) > 10000:
             df = df.sample(n=10000, random_state=42).reset_index(drop=True)
 
-        # 2. Optimize dtypes to reduce memory
+        # Optimize dtypes to reduce memory
         for col in df.select_dtypes(include=['float64']).columns:
             df[col] = df[col].astype('float32')
         for col in df.select_dtypes(include=['int64']).columns:
@@ -83,13 +82,9 @@ async def analyze_csv(file: UploadFile = File(...)):
                 df[col] = df[col].astype('int16')
             else:
                 df[col] = df[col].astype('int32')
-
-        # Free the raw CSV content from memory
-        del content
-        import gc
         gc.collect()
 
-        # 3. Run each model sequentially with cleanup between runs
+        # Run each model sequentially with cleanup between runs
         profile = run_data_profile(df)
         gc.collect()
 
@@ -143,6 +138,7 @@ async def clean_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
     try:
+        from models.anomaly import clean_anomalies
         content = await file.read()
         df = read_csv_robust(content)
 
@@ -183,6 +179,7 @@ async def fix_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
     try:
+        from models.data_health import auto_fix_dataset
         content = await file.read()
         df = read_csv_robust(content)
 
