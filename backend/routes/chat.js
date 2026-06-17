@@ -30,7 +30,7 @@ setTimeout(async () => {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:5001',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
                 'X-Title': 'AutoML Studio',
             },
             timeout: 15000,
@@ -285,7 +285,7 @@ ${analysisContext ? `\n--- ANALYSIS CONTEXT ---\n${analysisContext}\n--- END CON
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:5001',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
                 'X-Title': 'AutoML Studio',
             },
             timeout: 30000,
@@ -299,18 +299,16 @@ ${analysisContext ? `\n--- ANALYSIS CONTEXT ---\n${analysisContext}\n--- END CON
 
         res.json({ response: reply });
     } catch (err) {
-        console.error('Chat error:', err.response?.data || err.message);
+        console.error('Chat error:', JSON.stringify(err.response?.data || err.message));
 
-        let userMessage = 'Failed to process chat message.';
-        const errMsg = err.response?.data?.error?.message || err.message || '';
+        const errMsg = err.response?.data?.error?.message || err.response?.data?.error || err.message || '';
+        let userMessage = `AI error: ${typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)}`;
 
-        if (err.code === 'ECONNABORTED' || errMsg.includes('timeout')) {
+        if (err.code === 'ECONNABORTED' || (typeof errMsg === 'string' && errMsg.includes('timeout'))) {
             userMessage = 'AI response timed out. Please try a simpler question.';
-        } else if (errMsg.includes('invalid') || errMsg.includes('401') || errMsg.includes('Unauthorized')) {
-            userMessage = 'OPENROUTER_API_KEY is invalid. Please update it in backend/.env.';
-        } else if (errMsg.includes('429') || errMsg.includes('rate')) {
+        } else if (typeof errMsg === 'string' && (errMsg.includes('429') || errMsg.includes('rate'))) {
             userMessage = 'AI rate limit reached. Please wait a moment and try again.';
-        } else if (errMsg.includes('safety') || errMsg.includes('SAFETY')) {
+        } else if (typeof errMsg === 'string' && (errMsg.includes('safety') || errMsg.includes('SAFETY'))) {
             userMessage = 'The AI could not respond due to safety filters. Please rephrase your question.';
         }
 
