@@ -54,6 +54,10 @@ async def analyze_csv(file: UploadFile = File(...)):
         content = await file.read()
         df = read_csv_robust(content)
 
+        # Memory optimization: Downsample to 25k rows to prevent OOM on 512MB limit
+        if len(df) > 25000:
+            df = df.sample(n=25000, random_state=42).reset_index(drop=True)
+
         return {
             "status": "success",
             "filename": file.filename,
